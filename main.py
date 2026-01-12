@@ -4,7 +4,7 @@ import requests
 from google import genai
 from google.genai import types
 
-# 1. THE F&O STOCK LIST
+# 1. FULL F&O LIST
 STOCKS = [
     "AARTIIND", "ABB", "ABBOTINDIA", "ABCAPITAL", "ABFRL", "ACC", "ADANIENT", "ADANIPORTS", "ALKEM", "AMBUJACEM",
     "APOLLOHOSP", "APOLLOTYRE", "ASHOKLEY", "ASIANPAINT", "ASTRAL", "ATUL", "AUBANK", "AUROPHARMA", "AXISBANK", "BAJAJ-AUTO",
@@ -26,7 +26,7 @@ STOCKS = [
     "UPL", "VEDL", "VOLTAS", "WIPRO", "ZEEL", "ZYDUSLIFE"
 ]
 
-# 2. SETUP (Secrets must be in GitHub)
+# 2. SETUP
 client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
 TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
 CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
@@ -38,29 +38,28 @@ def send_telegram(message):
     except:
         pass
 
-def analyze_stock_god_mode(stock):
-    print(f"🕵️ Deep Scan: {stock}...")
+def analyze_short_term_risk(stock):
+    print(f"⚡ Scanning Short-Term Catalysts: {stock}...")
     
-    # SYSTEM PROMPT: Strictly looking for negative catalysts, NOT price movements.
+    # SYSTEM PROMPT: Focused on immediate, negative, news-driven impact.
     prompt = f"""
-    Perform an exhaustive real-time search for '{stock}' on the entire internet.
-    Ignore standard price fluctuations or daily market noise. 
+    Perform a real-time web search for '{stock}'. 
+    Identify negative news from the LAST 24-48 HOURS that will trigger a SHORT-TERM price drop.
     
-    Search for these 3 specific 'Black Swan' categories:
-    1. LEGAL/FRAUD: Investigations (SEBI, ED, CBI), whistleblower complaints, auditor resignations, or forensic accounting red flags.
-    2. DISRUPTIVE EVENTS: Massive factory fires, strikes, product recalls, or promoter pledging/margin call threats.
-    3. HIDDEN RISKS: Negative discussion trends on ValuePickr or Reddit, short-seller reports (like Hindenburg style), or major institutional exit rumors.
+    FOCUS ON:
+    1. EARNINGS/GUIDANCE: Recent earnings misses or negative management commentary.
+    2. CORPORATE GOVERNANCE: SEBI raids, promoter share pledging increases, or major FII sell-offs.
+    3. EXTERNAL SHOCKS: New US trade tariffs, sudden tax changes (LTCG/GST), or industry-specific regulatory bans.
+    4. SENTIMENT SHIFTS: Panic in discussion forums (Reddit/X) or short-seller alerts.
 
-    CRITICAL INSTRUCTION:
-    - Only respond with 'ALERT' if you find a catalyst that can cause a SUSTAINED drop in price.
-    - If the news is just a price dip without a major reason, reply 'SKIP'.
-    - If the news is positive or neutral, reply 'SKIP'.
-    - If you alert, provide a 1-10 'Impact Score' where 10 is a bankruptcy threat.
+    RESPONSE RULES:
+    - Respond 'ALERT' ONLY if the news has a high probability of causing a 3%+ drop in the NEXT 5 SESSIONS.
+    - IGNORE long-term growth stories, "buy the dip" opportunities, or old news.
+    - If no immediate negative catalyst is found, reply 'SKIP'.
+    - If alerting, provide: [Risk Score 1-10] and a 2-bullet point summary of the catalyst.
     """
 
     try:
-        # Gemini 2.0 Flash is currently more powerful for real-time web research than most others 
-        # because it is integrated directly with Google's search index.
         response = client.models.generate_content(
             model="gemini-2.0-flash",
             contents=prompt,
@@ -71,15 +70,15 @@ def analyze_stock_god_mode(stock):
         
         output = response.text
         if "ALERT" in output.upper():
-            send_telegram(f"⚡ *GOD-MODE NEGATIVE CATALYST: {stock}*\n\n{output}")
+            send_telegram(f"📉 *SHORT-TERM NEGATIVE ALERT: {stock}*\n\n{output}")
         else:
-            print(f"✅ {stock} is clean.")
+            print(f"✅ {stock}: No short-term threats.")
             
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"Error analyzing {stock}: {e}")
 
-# 4. EXECUTION
+# 4. EXECUTION LOOP
 if __name__ == "__main__":
     for stock in STOCKS:
-        analyze_stock_god_mode(stock)
-        time.sleep(8) # 8-second delay to ensure we finish 180 stocks within 45 mins
+        analyze_short_term_risk(stock)
+        time.sleep(10) # 10-second gap to stay within free tier and allow deep search
