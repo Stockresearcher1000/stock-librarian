@@ -1,44 +1,33 @@
 import os
 import requests
-import google.generativeai as genai
+from google import genai
 
-# These pull your secret passwords from the GitHub "Safe"
+# Pulling secrets from GitHub
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-# List of stocks to scan
-STOCKS = [
-    "RELIANCE", "TCS", "HDFCBANK", "ICICIBANK", "BHARTIARTL", "SBIN", "INFY", "LICI", "ITC", "HINDUNILVR",
-    "LT", "BAJFINANCE", "HCLTECH", "MARUTI", "SUNPHARMA", "ADANIENT", "KOTAKBANK", "TITAN", "ONGC", "TATAMOTORS",
-    "NTPC", "AXISBANK", "ADANIPORTS", "ADANIGREEN", "ASIANPAINT", "COALINDIA", "BAJAJFINSV", "BPCL", "GRASIM", "NESTLEIND",
-    "JSWSTEEL", "POWERGRID", "M&M", "TATASTEEL", "ADANIPOWER", "HAL", "DLF", "LTIM", "VBL", "SIEMENS",
-    "SBILIFE", "BEL", "PFC", "HINDALCO", "PIDILITIND", "TATACONSUM", "IOC", "BRITANNIA", "SHREECEM", "ICICIPRULI",
-    "INDUSINDBK", "BANKBARODA", "DIVISLAB", "GODREJCP", "GAIL", "TECHM", "WIPRO", "HDFCLIFE", "EICHERMOT", "HAVELLS",
-    "TRENT", "HEROMOTOCO", "CHOLAFIN", "CIPLA", "APOLLOHOSP", "DRREDDY", "BAJAJ-AUTO", "BOSCHLTD", "MANKIND", "TATACOMM",
-    "TVSMOTOR", "ULTRACEMCO", "UNITDSPR", "ZYDUSLIFE", "POLYCAB", "AMBUJACEM", "BHEL", "CANBK", "IDFCFIRSTB", "JINDALSTEL",
-    "KEI", "L&TFH", "MAXHEALTH", "MPHASIS", "OBEROIRLTY", "PAGEIND", "PERSISTENT", "PETRONET", "PHOENIXLTD", "RVNL",
-    "TATAELXSI", "UBL", "YESBANK", "ZEEL", "ABCAPITAL", "ABFRL", "AUBANK", "BANDHANBNK", "COLPAL", "COROMANDEL"
-]
+# Top Stocks List
+STOCKS = ["RELIANCE", "TCS", "HDFCBANK", "ICICIBANK", "BHARTIARTL", "SBIN", "INFY"] 
 
-genai.configure(api_key=GEMINI_KEY)
-model = genai.GenerativeModel('gemini-pro')
+client = genai.Client(api_key=GEMINI_KEY)
 
 def check_stock(stock):
-    # 1. This grabs news from the internet
+    # 1. Grab news
     url = f"https://news.google.com/rss/search?q={stock}+stock+news+last+24h"
     response = requests.get(url)
     
-    # 2. This asks the AI to read the news
-    prompt = f"Analyze these headlines for {stock}. If there is major negative news, reply 'ALERT: [Reason]'. Otherwise reply 'SKIP'. News: {response.text[:2000]}"
-    ai_msg = model.generate_content(prompt).text
+    # 2. Ask AI to analyze
+    prompt = f"Analyze these headlines for {stock}. If there is major negative news (fraud, crash, heavy loss), reply 'ALERT: [Reason]'. Otherwise reply 'SKIP'. News: {response.text[:2000]}"
     
-    # 3. If the AI finds something bad, it sends you a Telegram
+    response_ai = client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
+    ai_msg = response_ai.text
+    
+    # 3. Send Telegram if needed
     if "ALERT" in ai_msg.upper():
         msg = f"🚨 {stock} ALERT: {ai_msg}"
         requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={"chat_id": CHAT_ID, "text": msg})
 
-# This runs the check for every stock in your list
 for s in STOCKS:
     print(f"Checking {s}...")
     check_stock(s)
