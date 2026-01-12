@@ -26,7 +26,7 @@ def check_stock(stock):
         ai_msg = response_ai.text
         
         # 3. Send Telegram if needed
-        if "SKIP" in ai_msg.upper():
+        if "ALERT" in ai_msg.upper():
             msg = f"🚨 {stock} ALERT: {ai_msg}"
             requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={"chat_id": CHAT_ID, "text": msg})
             
