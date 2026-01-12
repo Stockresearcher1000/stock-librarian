@@ -1,21 +1,21 @@
 name: Hourly Stock Scan
 on:
   schedule:
-    - cron: '0 * * * *' # Wakes up every hour
-  workflow_dispatch:   # Adds the "Run Now" button
+    - cron: '0 * * * *'
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.9'
+          python-version: '3.11' # Upgraded version
       - name: Install dependencies
-        run: pip install requests google-generativeai
+        run: pip install requests google-genai # New library name
       - name: Run Scan
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
