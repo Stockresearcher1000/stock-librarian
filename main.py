@@ -1,9 +1,10 @@
 import os
 import time
+import requests
 from google import genai
 from google.genai import types
 
-# 1. NEW F&O STOCK LIST (NSE India)
+# 1. THE F&O STOCK LIST
 STOCKS = [
     "AARTIIND", "ABB", "ABBOTINDIA", "ABCAPITAL", "ABFRL", "ACC", "ADANIENT", "ADANIPORTS", "ALKEM", "AMBUJACEM",
     "APOLLOHOSP", "APOLLOTYRE", "ASHOKLEY", "ASIANPAINT", "ASTRAL", "ATUL", "AUBANK", "AUROPHARMA", "AXISBANK", "BAJAJ-AUTO",
@@ -25,38 +26,41 @@ STOCKS = [
     "UPL", "VEDL", "VOLTAS", "WIPRO", "ZEEL", "ZYDUSLIFE"
 ]
 
-# 2. SETUP CLIENTS
+# 2. SETUP (Secrets must be in GitHub)
 client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
 TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
 CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 
 def send_telegram(message):
-    import requests
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    payload = {"chat_id": CHAT_ID, "text": message, "parse_mode": "Markdown"}
-    requests.post(url, json=payload)
+    try:
+        requests.post(url, json={"chat_id": CHAT_ID, "text": message, "parse_mode": "Markdown"})
+    except:
+        pass
 
-def analyze_stock(stock):
-    print(f"Deep Researching: {stock}...")
+def analyze_stock_god_mode(stock):
+    print(f"🕵️ Deep Scan: {stock}...")
     
-    # SYSTEM INSTRUCTION: Tell the AI to act as a Risk Auditor
+    # SYSTEM PROMPT: Strictly looking for negative catalysts, NOT price movements.
     prompt = f"""
-    Perform a REAL-TIME deep-web search for the Indian stock '{stock}'. 
-    Scan global news (Bloomberg, Reuters), Indian financial news, and investor forums (Reddit, ValuePickr).
+    Perform an exhaustive real-time search for '{stock}' on the entire internet.
+    Ignore standard price fluctuations or daily market noise. 
     
-    Find:
-    1. Any MAJOR negative news from the last 24 hours (Fraud, crashes, legal issues).
-    2. Upcoming events (Earnings, RBI policy, Lawsuits) that could hurt the price.
-    3. Negative sentiment in online discussions.
+    Search for these 3 specific 'Black Swan' categories:
+    1. LEGAL/FRAUD: Investigations (SEBI, ED, CBI), whistleblower complaints, auditor resignations, or forensic accounting red flags.
+    2. DISRUPTIVE EVENTS: Massive factory fires, strikes, product recalls, or promoter pledging/margin call threats.
+    3. HIDDEN RISKS: Negative discussion trends on ValuePickr or Reddit, short-seller reports (like Hindenburg style), or major institutional exit rumors.
 
-    If you find a CRITICAL threat, start your response with 'ALERT'. 
-    If everything is normal or positive, start with 'SKIP'.
-    Summarize your findings in 3 bullet points.
+    CRITICAL INSTRUCTION:
+    - Only respond with 'ALERT' if you find a catalyst that can cause a SUSTAINED drop in price.
+    - If the news is just a price dip without a major reason, reply 'SKIP'.
+    - If the news is positive or neutral, reply 'SKIP'.
+    - If you alert, provide a 1-10 'Impact Score' where 10 is a bankruptcy threat.
     """
 
     try:
-        # 3. ENABLE LIVE GOOGLE SEARCH TOOL
-        # This allows Gemini to scan the "Whole Internet" in real-time
+        # Gemini 2.0 Flash is currently more powerful for real-time web research than most others 
+        # because it is integrated directly with Google's search index.
         response = client.models.generate_content(
             model="gemini-2.0-flash",
             contents=prompt,
@@ -65,17 +69,17 @@ def analyze_stock(stock):
             )
         )
         
-        ai_msg = response.text
-        if "ALERT" in ai_msg.upper():
-            send_telegram(f"🚨 *CRITICAL ALERT: {stock}*\n\n{ai_msg}")
+        output = response.text
+        if "ALERT" in output.upper():
+            send_telegram(f"⚡ *GOD-MODE NEGATIVE CATALYST: {stock}*\n\n{output}")
         else:
-            print(f"Result for {stock}: No critical threats found.")
+            print(f"✅ {stock} is clean.")
             
     except Exception as e:
-        print(f"Error analyzing {stock}: {e}")
+        print(f"Error: {e}")
 
-# 4. EXECUTION LOOP
+# 4. EXECUTION
 if __name__ == "__main__":
     for stock in STOCKS:
-        analyze_stock(stock)
-        time.sleep(10) # 10-second breather to respect API limits
+        analyze_stock_god_mode(stock)
+        time.sleep(8) # 8-second delay to ensure we finish 180 stocks within 45 mins
