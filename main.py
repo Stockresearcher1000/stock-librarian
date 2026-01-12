@@ -1,92 +1,95 @@
-import os
 import time
-import requests
 from google import genai
 from google.genai import types
 
-# --- CONFIGURATION ---
-# Using a slightly smaller test list to ensure we don't hit daily limits immediately
+# Initialize your Gemini Client
+client = genai.Client(api_key="YOUR_GEMINI_API_KEY")
+
+# 2026 NSE F&O LIST (Approx. 200 Stocks including new 2025-26 additions)
 STOCKS = [
-    "AARTIIND", "ABB", "ABBOTINDIA", "ABCAPITAL", "ABFRL", "ACC", "ADANIENT", "ADANIPORTS", 
-    "ADANIENSOL", "ADANIGREEN", "ADANITOTAL", "ALKEM", "AMBUJACEM", "ANGELONE", "APLAPOLLO", 
-    "APOLLOHOSP", "APOLLOTYRE", "ASHOKLEY", "ASIANPAINT", "ASTRAL", "ATUL", "AUBANK", 
-    "AUROPHARMA", "AXISBANK", "BAJAJ-AUTO", "BAJAJFINSV", "BAJFINANCE", "BALKRISIND", 
-    "BALRAMCHIN", "BANDHANBNK", "BANKBARODA", "BANKINDIA", "BATAINDIA", "BEL", "BERGEPAINT", 
-    "BHARATFORG", "BHEL", "BPCL", "BHARTIARTL", "BIOCON", "BIRLASOFT", "BLS", "BLUESTARCO", 
-    "BOSCHLTD", "BPCL", "BRITANNIA", "BSE", "CAMS", "CANFINHOME", "CANBK", "CDSL", 
-    "CHAMBLFERT", "CHOLAFIN", "CIPLA", "CITYUNIONB", "COALINDIA", "COFORGE", "COLPAL", 
-    "CONCOR", "COROMANDEL", "CROMPTON", "CUMMINSIND", "DABUR", "DALBHARAT", "DEEPAKNTR", 
-    "DELHIVERY", "DIVISLAB", "DIXON", "DLF", "DMART", "DRREDDY", "EICHERMOT", "ESCORTS", 
-    "EXIDEIND", "FEDERALBNK", "GAIL", "GLENMARK", "GODREJCP", "GODREJPROP", "GRANULES", 
-    "GRASIM", "GUJGASLTD", "GNFC", "HAVELLS", "HCLTECH", "HDFCBANK", "HDFCLIFE", "HDFCAMC", 
-    "HEROMOTOCO", "HINDALCO", "HINDCOPPER", "HINDPETRO", "HINDUNILVR", "ICICIBANK", 
-    "ICICIGI", "ICICIPRULI", "IDFCFIRSTB", "IDFC", "IEX", "IGL", "INDHOTEL", "INDIACEM", 
-    "INDIAMART", "INDIGO", "INDUSINDBK", "INDUSTOWER", "INFY", "IOC", "IRCTC", "IREDA", 
-    "IRFC", "ITC", "JINDALSTEL", "JIOFIN", "JKCEMENT", "JSWSTEEL", "JUBLFOOD", "KAYNES", 
-    "KFINTECH", "KOTAKBANK", "L&TFH", "LT", "LTIM", "LTTS", "LUPIN", "M&M", "M&MFIN", 
-    "MANAPPURAM", "MARICO", "MARUTI", "MAHABANK", "MAXHEALTH", "MAZDOCK", "METROPOLIS", 
-    "MFSL", "MGL", "MOTHERSON", "MPHASIS", "MRF", "MUTHOOTFIN", "NATIONALUM", "NAVINFLUOR", 
-    "NESTLEIND", "NHPC", "NMDC", "NTPC", "OBEROIRLTY", "OFSS", "ONGC", "PAGEIND", 
-    "PEL", "PERSISTENT", "PETRONET", "PFC", "PGEL", "PHOENIXLTD", "PIDILITIND", "PIIND", 
-    "PNB", "POLYCAP", "POWERTARIFF", "POWERGRID", "PVRINOX", "RAMCOCEM", "RECLTD", 
-    "RELIANCE", "SAIL", "SBICARD", "SBILIFE", "SBIN", "SHREECEM", "SHRIRAMFIN", "SIEMENS", 
-    "SOLARINDS", "SONACOMS", "SRF", "STV", "SUNPHARMA", "SUNTV", "SUPREMEIND", "SWIGGY", 
-    "SYNGENE", "TATACHEM", "TATACOMM", "TATACONSUM", "TATAMOTORS", "TATAPOWER", "TATASTEEL", 
-    "TATATECH", "TCS", "TECHM", "TITAN", "TORNTPHARM", "TORNTPOWER", "TRENT", "TVSMOTOR", 
-    "UBL", "ULTRACEMCO", "UPL", "VBL", "VEDL", "VOLTAS", "WIPRO", "YESBANK", "ZOMATO", "ZYDUSLIFE"
+    "ABB", "ADANIENSOL", "ADANIENT", "ADANIGREEN", "ADANIPORTS", "ALKEM", "AMBUJACEM", "APOLLOHOSP", 
+    "ASIANPAINT", "ASTRAL", "AUROPHARMA", "AXISBANK", "BAJAJ-AUTO", "BAJFINANCE", "BAJAJFINSV", 
+    "BALKRISIND", "BANDHANBNK", "BANKBARODA", "BEL", "BERGEPAINT", "BHARTIARTL", "BIOCON", 
+    "BOSCHLTD", "BPCL", "BRITANNIA", "CANBK", "CHOLAFIN", "CIPLA", "COALINDIA", "COFORGE", 
+    "COLPAL", "CONCOR", "CUMMINSIND", "DABUR", "DALBHARAT", "DEEPAKNTR", "DELHIVERY", "DIVISLAB", 
+    "DIXON", "DLF", "DRREDDY", "EICHERMOT", "ESCORTS", "ETERNAL", "EXIDEIND", "FEDERALBNK", 
+    "GAIL", "GLENMARK", "GMRINFRA", "GODREJCP", "GODREJPROP", "GRASIM", "GUJGASLTD", "HAL", 
+    "HAVELLS", "HCLTECH", "HDFCBANK", "HDFCLIFE", "HEROMOTOCO", "HINDALCO", "HINDCOPPER", 
+    "HINDPETRO", "HINDUNILVR", "ICICIBANK", "ICICIGI", "ICICIPRULI", "IDFCFIRSTB", "IEX", 
+    "IGL", "INDHOTEL", "INDIACEM", "INDIAMART", "INDIGO", "INDUSINDBK", "INDUSTOWER", "INFY", 
+    "IPCALAB", "IRCTC", "IRFC", "ITC", "JINDALSTEL", "JIOFIN", "JKCEMENT", "JSWENERGY", 
+    "JSWSTEEL", "JUBLFOOD", "KOTAKBANK", "L&TFH", "LICI", "LT", "LTIM", "LUPIN", "M&M", 
+    "M&MFIN", "MANAPPURAM", "MARICO", "MARUTI", "MCX", "METROPOLIS", "MPHASIS", "MRF", 
+    "MUTHOOTFIN", "NATIONALUM", "NAVINFLUOR", "NESTLEIND", "NMDC", "NTPC", "OBEROIRLTY", 
+    "OFSS", "ONGC", "PAGEIND", "PEL", "PERSISTENT", "PETRONET", "PFC", "PIDILITIND", "PIIND", 
+    "PNB", "POLYCAB", "POWERTARID", "PVRINOX", "RAMCOCEM", "RBLBANK", "RECLTD", "RELIANCE", 
+    "SAIL", "SBICARD", "SBILIFE", "SBIN", "SHREECEM", "SHRIRAMFIN", "SIEMENS", "SRF", 
+    "SUNPHARMA", "SUNTV", "SUPREMEIND", "SWIGGY", "SYNGENE", "TATACOMM", "TATACONSUM", 
+    "TATAMOTORS", "TATAPOWER", "TATASTEEL", "TCS", "TECHM", "TITAN", "TORNTPHARM", "TRENT", 
+    "TVSMOTOR", "UBL", "ULTRACEMCO", "UPL", "VEDL", "VOLTAS", "WIPRO", "YESBANK", "ZYDUSLIFE"
 ]
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
-client = genai.Client(api_key=GEMINI_API_KEY)
+def chunks(lst, n):
+    for i in range(0, len(lst), n):
+        yield lst[i:i + n]
 
-def get_intelligence(stock):
-    # Acting as an Analyst hunting for specific Indian Market triggers
-    prompt = f"""
-    Act as a Senior NSE/BSE Financial Intelligence Analyst. 
-    Scan for {stock}:
-    1. RECENT NEGATIVE NEWS/RUMORS: Look for auditor exits, SEBI/ED probes, or social media 'leaks'.
-    2. UPCOMING RISKS: Check for earnings misses or regulatory deadlines in the next 14 days.
-    3. FILTER: If no news likely to cause a >2% price drop exists, respond 'CLEAR'.
+def get_batch_intelligence(stock_group):
+    stock_list_str = ", ".join(stock_group)
     
-    If a threat is found: Provide RISK SCORE (1-10), CATALYST, and SOURCE.
+    prompt = f"""
+    You are an Omniscient Financial Forensic Auditor. 
+    Analyze these stocks for HIGH-PROBABILITY price crashes: {stock_list_str}.
+    
+    CRITICAL TRIGGERS TO TRACK:
+    1. LEGAL & COURT: Search for upcoming Supreme Court or SAT judgments (e.g., SAT Appeal No. 348/2023). Look for 'Reserved Judgments' about to be delivered.
+    2. REGULATORY: Check for SEBI 'Adjudication Orders' or RBI 'Monetary Penalties' issued in the last 24-48 hours.
+    3. INSIDER WARNINGS: Search for 'Auditor Resignations' (e.g., AD-1 filings) or 'Forensic Audit' rumors.
+    
+    FILTERING CRITERIA:
+    - ONLY alert if you are 95%+ confident of a NEGATIVE price impact >5%.
+    - If it's just general news or a "buy" rating, IGNORE IT.
+    
+    RESPONSE FORMAT:
+    - If NO God-tier threat is found, respond ONLY with: NULL
+    - If a threat IS found, respond with:
+      🚨 STOCK: [Name]
+      ⚖️ LEGAL/CATALYST: [Specific Case No. or Regulatory Order]
+      💥 IMPACT: [Expected % fall]
+      📅 TIMING: [When the impact is expected]
+      🧠 CONFIDENCE: [High/Absolute]
     """
     
-    # Retry loop to handle the 429 Error
-    for attempt in range(3):
-        try:
-            response = client.models.generate_content(
-                model="gemini-2.5-flash-lite", # Switched to high-quota model
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    tools=[types.Tool(google_search=types.GoogleSearch())]
-                )
+    try:
+        # Using Gemini 2.0 Flash for high-speed search and reasoning
+        response = client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                tools=[types.Tool(google_search=types.GoogleSearch())]
             )
-            return response.text
-        except Exception as e:
-            if "429" in str(e):
-                wait_time = (attempt + 1) * 30  # Wait 30s, then 60s
-                print(f"⚠️ Rate limit hit for {stock}. Retrying in {wait_time}s...")
-                time.sleep(wait_time)
-            else:
-                return f"Error: {str(e)}"
-    return "CLEAR"
+        )
+        return response.text.strip()
+    except Exception as e:
+        print(f"Error: {e}")
+        return "NULL"
 
-def send_telegram(message):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
-    requests.post(url, json=payload)
+def main():
+    print("🔎 Starting God-Mode Risk Scan for F&O Stocks...")
+    # Checking in batches of 10 to maintain high search accuracy
+    for stock_group in chunks(STOCKS, 10):
+        print(f"Checking Risk: {stock_group[0]} to {stock_group[-1]}...")
+        
+        report = get_batch_intelligence(stock_group)
+        
+        if report and report.upper() != "NULL":
+            # Replace with your actual telegram send function
+            print(f"Sending Urgent Alert: \n{report}")
+            # send_telegram(report)
+        else:
+            print("Status: Clear (No high-impact threats)")
+        
+        # Throttling to respect API limits and allow deep searching
+        time.sleep(20)
 
-# --- EXECUTION ---
-print("🚀 Sentinax-FO: Starting Advanced Intelligence Scan...")
-for stock in STOCKS:
-    result = get_intelligence(stock)
-    if result and "CLEAR" not in result.upper() and "ERROR" not in result.upper():
-        send_telegram(f"⚠️ *SENTINAX-FO ALERT*\n\n{result}")
-        print(f"❗ Alert sent for {stock}")
-    else:
-        print(f"✅ {stock}: Scanned successfully.")
-    
-    # CRITICAL: Wait 12 seconds between stocks to stay under 5 RPM limit
-    time.sleep(12)
+if __name__ == "__main__":
+    main()
