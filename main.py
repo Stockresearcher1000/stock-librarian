@@ -88,7 +88,7 @@ def forum_agent(stock):
         if resp.status_code != 200:
             return "Forum page not accessible"
 
-        soup = BeautifulSoup(resp.text, 'html.parser')  # or 'lxml' later
+        soup = BeautifulSoup(resp.text, features='lxml')  # explicit
         posts = soup.find_all('div', class_='post')
         negative_mentions = []
         for post in posts[:10]:  # last 10 posts
