@@ -1,0 +1,7 @@
+google-genai
+requests
+beautifulsoup4
+feedparser
+python-telegram-bot
+transformers
+torch
