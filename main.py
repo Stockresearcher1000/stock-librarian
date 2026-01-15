@@ -1,24 +1,40 @@
-Pythonimport time
+import time
 import re
 import threading
 import sqlite3
 import logging
+import os
 from google.generativeai import GenerativeModel
 import google.generativeai as genai
 from google.generativeai.types import GenerateContentConfig, Tool
 import requests
 from bs4 import BeautifulSoup
 import feedparser
-from telegram import Bot  # pip install python-telegram-bot
-from transformers import pipeline  # pip install transformers torch
+from telegram import Bot
+from transformers import pipeline
 
-# Scan interval (seconds; 1800 = 30 min, 3600 = 1 hour)
+# Load secrets from environment variables (GitHub Actions + local .env)
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
+
+# Safety checks – crash early if secrets are missing
+if not GEMINI_API_KEY:
+    raise ValueError("GEMINI_API_KEY is not set in environment variables")
+if not TELEGRAM_TOKEN:
+    raise ValueError("TELEGRAM_TOKEN is not set in environment variables")
+if not TELEGRAM_CHAT_ID:
+    raise ValueError("TELEGRAM_CHAT_ID is not set in environment variables")
+
+HUGGINGFACE_MODEL = "ProsusAI/finbert"  # Free finance-tuned sentiment model
+
+# Scan interval (seconds) – 1800 = 30 minutes
 SCAN_INTERVAL = 1800
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Initialize SQLite for de-duping seen alerts
+# Initialize SQLite for de-duping alerts
 DB_FILE = 'sentinel_alerts.db'
 def init_db():
     conn = sqlite3.connect(DB_FILE)
@@ -37,7 +53,7 @@ def mark_seen(hash_str):
     cursor.execute("INSERT OR IGNORE INTO seen_alerts (hash) VALUES (?)", (hash_str,))
     conn.commit()
 
-# Latest NSE F&O stock symbols (snapshot as of Jan 2026; ~202 symbols, sorted)
+# NSE F&O stocks snapshot (~200 symbols, Jan 2026)
 STOCKS = [
     "360ONE", "ABB", "ABCAPITAL", "ADANIENSOL", "ADANIENT", "ADANIGREEN", "ADANIPORTS", "ALKEM", "AMBER", "AMBUJACEM",
     "ANGELONE", "APLAPOLLO", "APOLLOHOSP", "ASHOKLEY", "ASIANPAINT", "ASTRAL", "AUBANK", "AUROPHARMA", "AXISBANK", "BAJAJ-AUTO",
@@ -64,15 +80,13 @@ STOCKS = [
 ]
 
 def chunks(lst, n):
-    """Yield successive n-sized chunks from lst."""
     for i in range(0, len(lst), n):
         yield lst[i:i + n]
 
-# Agent Classes for Collaboration (free, modular)
 class GeminiAgent:
     def __init__(self):
         genai.configure(api_key=GEMINI_API_KEY)
-        self.model = GenerativeModel('gemini-1.5-flash')  # Fast model
+        self.model = GenerativeModel('gemini-1.5-flash')
 
     def search(self, stock_group):
         stock_list_str = ", ".join(stock_group)
@@ -126,15 +140,15 @@ class RSSNewsAgent:
     def search(self, stock):
         rss_urls = [
             f"https://news.google.com/rss/search?q={stock}+fraud+penalty+probe+scam+lawsuit+negative+when:1d&hl=en-IN&gl=IN&ceid=IN:en",
-            f"https://www.moneycontrol.com/rss/MCtopnews.xml",
-            f"https://economictimes.indiatimes.com/rssfeedsdefault.cms"
+            "https://www.moneycontrol.com/rss/MCtopnews.xml",
+            "https://economictimes.indiatimes.com/rssfeedsdefault.cms"
         ]
         results = []
         for url in rss_urls:
             try:
                 feed = feedparser.parse(url)
                 for entry in feed.entries[:10]:
-                    if stock.lower() in entry.title.lower() or stock.lower() in entry.get('description', '').lower():
+                    if stock.lower() in (entry.title or '').lower() or stock.lower() in (entry.get('description', '')).lower():
                         results.append(f"{entry.title} - {entry.link}")
             except Exception as e:
                 logging.error(f"RSS error for {stock}: {e}")
@@ -187,7 +201,7 @@ class DateExtractionAgent:
         dates = []
         for pattern in patterns:
             dates.extend(re.findall(pattern, text))
-        future_dates = [d for d in dates if int(d.split()[-1]) >= 2026]
+        future_dates = [d for d in dates if '2026' in d or '2027' in d]
         return ', '.join(set(future_dates)) if future_dates else None
 
 def process_batch(stock_group):
@@ -224,8 +238,8 @@ def process_batch(stock_group):
         for t in threads:
             t.join()
 
-        combined_text = "\n".join([result.get(k, '') for k in ['gemini', 'rss', 'forum', 'lawsuit']])
-        if combined_text.strip().upper() == "NULL" or not combined_text.strip():
+        combined_text = "\n".join([result.get(k, '') for k in ['gemini', 'rss', 'forum', 'lawsuit'] if result.get(k)])
+        if not combined_text.strip() or combined_text.strip().upper() == "NULL":
             continue
 
         is_negative, score = sentiment_agent.analyze(combined_text)
@@ -263,7 +277,7 @@ def main():
                 logging.info(f"Alerts generated for {list(reports.keys())}")
             time.sleep(10)
 
-        logging.info(f"Full scan complete. Next in {SCAN_INTERVAL / 60} min...")
+        logging.info(f"Full scan complete. Next scan in {SCAN_INTERVAL / 60} minutes...")
         time.sleep(SCAN_INTERVAL)
 
 if __name__ == "__main__":
