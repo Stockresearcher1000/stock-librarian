@@ -12,12 +12,13 @@ import feedparser
 from telegram import Bot
 from transformers import pipeline
 
-# Load secrets from environment variables (GitHub Actions + local .env)
+# ──────────────────────────────────────────────────────────────
+# Load secrets from environment variables (GitHub Actions)
+# ──────────────────────────────────────────────────────────────
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
-# Safety checks – crash early if secrets are missing
 if not GEMINI_API_KEY:
     raise ValueError("GEMINI_API_KEY is not set in environment variables")
 if not TELEGRAM_TOKEN:
@@ -25,34 +26,32 @@ if not TELEGRAM_TOKEN:
 if not TELEGRAM_CHAT_ID:
     raise ValueError("TELEGRAM_CHAT_ID is not set in environment variables")
 
-HUGGINGFACE_MODEL = "ProsusAI/finbert"  # Free finance-tuned sentiment model
+HUGGINGFACE_MODEL = "ProsusAI/finbert"
 
-# Scan interval (seconds) – 1800 = 30 minutes
-SCAN_INTERVAL = 1800
+SCAN_INTERVAL = 1800  # 30 minutes
 
-# Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Initialize SQLite for de-duping alerts
+# SQLite for deduplication
 DB_FILE = 'sentinel_alerts.db'
 def init_db():
     conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute('CREATE TABLE IF NOT EXISTS seen_alerts (hash TEXT PRIMARY KEY)')
+    c = conn.cursor()
+    c.execute('CREATE TABLE IF NOT EXISTS seen_alerts (hash TEXT PRIMARY KEY)')
     conn.commit()
-    return conn, cursor
+    return conn, c
 
 conn, cursor = init_db()
 
-def is_seen(hash_str):
-    cursor.execute("SELECT 1 FROM seen_alerts WHERE hash = ?", (hash_str,))
+def is_seen(h):
+    cursor.execute("SELECT 1 FROM seen_alerts WHERE hash = ?", (h,))
     return cursor.fetchone() is not None
 
-def mark_seen(hash_str):
-    cursor.execute("INSERT OR IGNORE INTO seen_alerts (hash) VALUES (?)", (hash_str,))
+def mark_seen(h):
+    cursor.execute("INSERT OR IGNORE INTO seen_alerts (hash) VALUES (?)", (h,))
     conn.commit()
 
-# NSE F&O stocks snapshot (~200 symbols, Jan 2026)
+# F&O stock list (update periodically if needed)
 STOCKS = [
     "360ONE", "ABB", "ABCAPITAL", "ADANIENSOL", "ADANIENT", "ADANIGREEN", "ADANIPORTS", "ALKEM", "AMBER", "AMBUJACEM",
     "ANGELONE", "APLAPOLLO", "APOLLOHOSP", "ASHOKLEY", "ASIANPAINT", "ASTRAL", "AUBANK", "AUROPHARMA", "AXISBANK", "BAJAJ-AUTO",
@@ -82,43 +81,47 @@ def chunks(lst, n):
     for i in range(0, len(lst), n):
         yield lst[i:i + n]
 
+# ──────────────────────────────────────────────────────────────
+# AGENTS
+# ──────────────────────────────────────────────────────────────
+
 class GeminiAgent:
     def __init__(self):
         self.client = genai.Client(api_key=GEMINI_API_KEY)
 
     def search(self, stock_group):
         stock_list_str = ", ".join(stock_group)
-        prompt = f"""  # ← Your existing prompt text here (keep it the same)
-        You are an Omniscient Financial Forensic Auditor searching the whole internet.
-        Analyze these stocks for negative news/price crashes: {stock_list_str}.
-        
-        TRIGGERS (global/Indian):
-        1. LEGAL/COURTS: Lawsuits, hearings, judgments (SEBI/SAT/Supreme Court, US SEC/EU, extract upcoming dates).
-        2. REGULATORY: Penalties, probes (ED/CBI/RBI/SEBI, international).
-        3. INSIDER/RUMORS: Resignations, audits, selling.
-        4. FORUMS/SOCIAL: Reddit, StockTwits, ValuePickr, X, Seeking Alpha for rumors/upcoming events.
-        5. UPCOMING: Forward-looking negatives (e.g., 'expected fine next month').
-        
-        CRITERIA:
-        - Every potential negative mention (high-impact highlighted >5% fall, 95%+ confidence).
-        - English only; include links/sources.
-        - Extract dates.
-        
-        FORMAT (per stock):
-        🚨 STOCK: [Name]
-        ⚖️ CATALYST: [Details + link]
-        💥 IMPACT: [Expected fall]
-        📅 DATES: [Upcoming]
-        🧠 CONFIDENCE: [Level]
-        🌐 SOURCE: [e.g., Reuters/Reddit]
-        If none: NULL
-        """
-       try:
+        prompt = f"""
+You are an Omniscient Financial Forensic Auditor searching the whole internet.
+Analyze these stocks for negative news/price crashes: {stock_list_str}.
+
+TRIGGERS (global/Indian):
+1. LEGAL/COURTS: Lawsuits, hearings, judgments (SEBI/SAT/Supreme Court, US SEC/EU, extract upcoming dates).
+2. REGULATORY: Penalties, probes (ED/CBI/RBI/SEBI, international).
+3. INSIDER/RUMORS: Resignations, audits, selling.
+4. FORUMS/SOCIAL: Reddit, StockTwits, ValuePickr, X, Seeking Alpha for rumors/upcoming events.
+5. UPCOMING: Forward-looking negatives (e.g., 'expected fine next month').
+
+CRITERIA:
+- Every potential negative mention (high-impact highlighted >5% fall, 95%+ confidence).
+- English only; include links/sources.
+- Extract dates.
+
+FORMAT (per stock):
+🚨 STOCK: [Name]
+⚖️ CATALYST: [Details + link]
+💥 IMPACT: [Expected fall]
+📅 DATES: [Upcoming]
+🧠 CONFIDENCE: [Level]
+🌐 SOURCE: [e.g., Reuters/Reddit]
+If none: NULL
+"""
+        try:
             response = self.client.models.generate_content(
-                model='gemini-1.5-flash',  # or 'gemini-2.0-flash' if preferred
+                model="gemini-1.5-flash",
                 contents=prompt,
                 config=types.GenerateContentConfig(
-                    tools=[types.Tool(google_search=types.GoogleSearch())]  # Enable search tool
+                    tools=[types.Tool(google_search=types.GoogleSearch())]
                 )
             )
             return response.text.strip()
@@ -134,13 +137,13 @@ class SentimentAgent:
         if not text or text.upper() == "NULL":
             return False, 0.0
         result = self.analyzer(text)[0]
-        is_negative = result['label'] == 'negative' and result['score'] > 0.7
-        return is_negative, result['score']
+        is_neg = result['label'] == 'negative' and result['score'] > 0.7
+        return is_neg, result['score']
 
 class RSSNewsAgent:
     def search(self, stock):
         rss_urls = [
-            f"https://news.google.com/rss/search?q={stock}+fraud+penalty+probe+scam+lawsuit+negative+when:1d&hl=en-IN&gl=IN&ceid=IN:en",
+            f"https://news.google.com/rss/search?q={stock}+fraud+OR+penalty+OR+probe+OR+scam+OR+lawsuit+negative+when:1d&hl=en-IN&gl=IN&ceid=IN:en",
             "https://www.moneycontrol.com/rss/MCtopnews.xml",
             "https://economictimes.indiatimes.com/rssfeedsdefault.cms"
         ]
@@ -149,50 +152,51 @@ class RSSNewsAgent:
             try:
                 feed = feedparser.parse(url)
                 for entry in feed.entries[:10]:
-                    if stock.lower() in (entry.title or '').lower() or stock.lower() in (entry.get('description', '')).lower():
+                    txt = (entry.title or '') + ' ' + (entry.get('description', '') or '')
+                    if stock.lower() in txt.lower():
                         results.append(f"{entry.title} - {entry.link}")
             except Exception as e:
-                logging.error(f"RSS error for {stock}: {e}")
+                logging.error(f"RSS error {stock}: {e}")
         return "\n".join(results) if results else "NULL"
 
 class ForumAgent:
     def search(self, stock):
-        forum_queries = [
-            f"https://www.reddit.com/search.rss?q={stock}+negative+rumor+scam+fraud&sort=new",
+        queries = [
+            f"https://www.reddit.com/search.rss?q={stock}+negative+OR+rumor+OR+scam+OR+fraud&sort=new",
             f"https://stocktwits.com/symbol/{stock}/rss" if stock else ""
         ]
         results = []
-        for url in forum_queries:
+        for url in queries:
             if not url: continue
             try:
-                response = requests.get(url, timeout=10)
-                soup = BeautifulSoup(response.text, 'xml')
+                r = requests.get(url, timeout=10)
+                soup = BeautifulSoup(r.text, 'xml')
                 items = soup.find_all('item')[:5]
                 for item in items:
                     title = item.find('title').text if item.find('title') else ""
                     link = item.find('link').text if item.find('link') else ""
-                    if any(kw in title.lower() for kw in ['fraud', 'scam', 'probe', 'negative']):
+                    if any(k in title.lower() for k in ['fraud', 'scam', 'probe', 'negative']):
                         results.append(f"{title} - {link}")
             except Exception as e:
-                logging.error(f"Forum error for {stock}: {e}")
+                logging.error(f"Forum error {stock}: {e}")
         return "\n".join(results) if results else "NULL"
 
 class LawsuitAgent:
     def search(self, stock):
-        query = f"{stock} lawsuit hearing date penalty SEBI ED CBI site:gov.in OR site:courtlistener.com OR site:supremecourt.gov.in after:2026-01-01"
+        q = f"{stock} lawsuit OR hearing OR date OR penalty OR SEBI OR ED OR CBI site:gov.in OR site:courtlistener.com OR site:supremecourt.gov.in after:2026-01-01"
         try:
-            response = requests.get(f"https://www.google.com/search?q={requests.utils.quote(query)}", timeout=10)
-            soup = BeautifulSoup(response.text, 'html.parser')
+            r = requests.get(f"https://www.google.com/search?q={requests.utils.quote(q)}", timeout=10)
+            soup = BeautifulSoup(r.text, 'html.parser')
             links = [a['href'] for a in soup.find_all('a', href=True) if 'http' in a['href']][:3]
             return "\n".join(links) if links else "NULL"
         except Exception as e:
-            logging.error(f"Lawsuit error for {stock}: {e}")
+            logging.error(f"Lawsuit error {stock}: {e}")
             return "NULL"
 
 class DateExtractionAgent:
     def extract(self, text):
         text = text.lower()
-        patterns = [
+        pats = [
             r'\b(\d{1,2}[-/ ]\w{3,9}[-/ ]\d{4})\b',
             r'\b(\w{3,9} \d{1,2},? \d{4})\b',
             r'\b(\d{1,2}/\d{1,2}/\d{4})\b',
@@ -200,85 +204,78 @@ class DateExtractionAgent:
             r'expected by \d{4}-\d{2}-\d{2}'
         ]
         dates = []
-        for pattern in patterns:
-            dates.extend(re.findall(pattern, text))
-        future_dates = [d for d in dates if '2026' in d or '2027' in d]
-        return ', '.join(set(future_dates)) if future_dates else None
+        for p in pats:
+            dates.extend(re.findall(p, text))
+        future = [d for d in dates if '2026' in d or '2027' in d]
+        return ', '.join(set(future)) if future else None
+
+# ──────────────────────────────────────────────────────────────
+# MAIN PROCESSING
+# ──────────────────────────────────────────────────────────────
 
 def process_batch(stock_group):
-    gemini_agent = GeminiAgent()
-    sentiment_agent = SentimentAgent()
-    rss_agent = RSSNewsAgent()
-    forum_agent = ForumAgent()
-    lawsuit_agent = LawsuitAgent()
-    date_agent = DateExtractionAgent()
+    gemini = GeminiAgent()
+    sentiment = SentimentAgent()
+    rss = RSSNewsAgent()
+    forum = ForumAgent()
+    lawsuit = LawsuitAgent()
+    dates = DateExtractionAgent()
 
-    def gemini_thread(result):
-        result['gemini'] = gemini_agent.search(stock_group)
-
-    def rss_thread(result, stock):
-        result['rss'] = rss_agent.search(stock)
-
-    def forum_thread(result, stock):
-        result['forum'] = forum_agent.search(stock)
-
-    def lawsuit_thread(result, stock):
-        result['lawsuit'] = lawsuit_agent.search(stock)
+    def gemini_t(r): r['gemini'] = gemini.search(stock_group)
+    def rss_t(r, s): r['rss'] = rss.search(s)
+    def forum_t(r, s): r['forum'] = forum.search(s)
+    def lawsuit_t(r, s): r['lawsuit'] = lawsuit.search(s)
 
     reports = {}
     for stock in stock_group:
-        result = {}
-        threads = [
-            threading.Thread(target=gemini_thread, args=(result,)),
-            threading.Thread(target=rss_thread, args=(result, stock)),
-            threading.Thread(target=forum_thread, args=(result, stock)),
-            threading.Thread(target=lawsuit_thread, args=(result, stock))
+        res = {}
+        ts = [
+            threading.Thread(target=gemini_t, args=(res,)),
+            threading.Thread(target=rss_t, args=(res, stock)),
+            threading.Thread(target=forum_t, args=(res, stock)),
+            threading.Thread(target=lawsuit_t, args=(res, stock))
         ]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
+        for t in ts: t.start()
+        for t in ts: t.join()
 
-        combined_text = "\n".join([result.get(k, '') for k in ['gemini', 'rss', 'forum', 'lawsuit'] if result.get(k)])
-        if not combined_text.strip() or combined_text.strip().upper() == "NULL":
+        combined = "\n".join([res.get(k, '') for k in ['gemini','rss','forum','lawsuit'] if res.get(k)])
+        if not combined.strip() or combined.strip().upper() == "NULL":
             continue
 
-        is_negative, score = sentiment_agent.analyze(combined_text)
-        if is_negative:
-            report = f"🚨 Multi-Agent Alert for {stock}:\n{combined_text}\n🤖 Sentiment: Negative (Score: {score:.2f})"
-            dates = date_agent.extract(combined_text)
-            if dates:
-                report += f"\n🗓 Upcoming Dates: {dates}"
-            if score > 0.95:
-                report += "\n🔥 HIGH IMPACT DETECTED!"
+        is_neg, score = sentiment.analyze(combined)
+        if is_neg:
+            msg = f"🚨 Multi-Agent Alert for {stock}:\n{combined}\n🤖 Sentiment: Negative (Score: {score:.2f})"
+            d = dates.extract(combined)
+            if d: msg += f"\n🗓 Upcoming Dates: {d}"
+            if score > 0.95: msg += "\n🔥 HIGH IMPACT DETECTED!"
 
-            report_hash = str(hash(report))
-            if not is_seen(report_hash):
-                send_telegram_alert(report)
-                mark_seen(report_hash)
-                reports[stock] = report
+            h = str(hash(msg))
+            if not is_seen(h):
+                send_alert(msg)
+                mark_seen(h)
+                reports[stock] = msg
 
     return reports
 
-def send_telegram_alert(report):
+def send_alert(text):
     try:
         bot = Bot(token=TELEGRAM_TOKEN)
-        bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=report)
-        logging.info("Alert sent successfully")
+        bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=text)
+        logging.info("Alert sent")
     except Exception as e:
-        logging.error(f"Telegram send error: {e}")
+        logging.error(f"Telegram error: {e}")
 
 def main():
     logging.info("🔎 Starting F&O Negative News Sentinel v1...")
     while True:
-        for stock_group in chunks(STOCKS, 5):
-            logging.info(f"Processing batch: {', '.join(stock_group)}")
-            reports = process_batch(stock_group)
-            if reports:
-                logging.info(f"Alerts generated for {list(reports.keys())}")
+        for group in chunks(STOCKS, 5):
+            logging.info(f"Batch: {', '.join(group)}")
+            reps = process_batch(group)
+            if reps:
+                logging.info(f"Alerts: {list(reps.keys())}")
             time.sleep(10)
 
-        logging.info(f"Full scan complete. Next scan in {SCAN_INTERVAL / 60} minutes...")
+        logging.info(f"Scan done. Next in {SCAN_INTERVAL/60} min")
         time.sleep(SCAN_INTERVAL)
 
 if __name__ == "__main__":
