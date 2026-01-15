@@ -47,11 +47,11 @@ sentiment_pipeline = pipeline(
 
 # Stocks list (F&O stocks - example, replace with your full list)
 STOCKS = [
-    "360ONE", "ABB", "ABCAPITAL", "ADANIENSOL", "ADANIENT", "ADANIGREEN", "ADANIPORTS",
-    "ALKEM", "AMBER", "AMBUJACEM", "ANGELONE", "APLAPOLLO", "APOLLOHOSP", "ASHOKLEY",
-    "ASIANPAINT", "ASTRAL", "AUBANK", "AUROPHARMA", "AXISBANK", "BAJAJ-AUTO",
-    # ... add all ~200 stocks here ...
-    "YESBANK", "ZEEL", "ZOMATO", "ZYDUSLIFE"
+    "AMBER",
+    "ADANIENT",
+    "ZOMATO",
+    "YESBANK",
+    "AXISBANK"
 ]
 
 BATCH_SIZE = 5
