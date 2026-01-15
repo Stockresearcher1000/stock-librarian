@@ -1,16 +1,25 @@
 import asyncio
+import os
 from telegram import Bot
 
-# Replace these with your REAL values
-TELEGRAM_BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"
-TELEGRAM_CHAT_ID   = "YOUR_CHAT_ID_HERE"
+# FETCH from the environment (these must match the names in your .yml file)
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID")
 
 async def send_notification():
-    # 1. Use an 'async with' block to handle initialization & shutdown automatically
+    # SAFETY CHECK: Ensure the secrets were actually loaded
+    if not TELEGRAM_BOT_TOKEN or "YOUR_BOT" in TELEGRAM_BOT_TOKEN:
+        print("❌ ERROR: TELEGRAM_TOKEN is missing or still a placeholder!")
+        return
+    if not TELEGRAM_CHAT_ID:
+        print("❌ ERROR: TELEGRAM_CHAT_ID is missing!")
+        return
+
     try:
+        # Initialize the bot
         bot = Bot(token=TELEGRAM_BOT_TOKEN)
         
-        async with bot:  # This line is CRITICAL for v20+ 
+        async with bot:  # Automatically handles initialize() and shutdown()
             message = (
                 "🔔 *Quick Update from Stock Bot*\n\n"
                 "Scanned 2 stocks:\n"
