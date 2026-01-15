@@ -12,12 +12,6 @@ import feedparser
 from telegram import Bot  # pip install python-telegram-bot
 from transformers import pipeline  # pip install transformers torch
 
-# Configuration - Filled with your provided credentials
-GEMINI_API_KEY = "AIzaSyDpvqkxuu0nLOoSO7OXjkewjgwvN4qpFQ4"
-TELEGRAM_TOKEN = "8206624667:AAHxzJG8x36S4K0KHoqrVK9VYEjCjzstcvo"
-TELEGRAM_CHAT_ID = "414792154"
-HUGGINGFACE_MODEL = "ProsusAI/finbert"  # Free finance sentiment model
-
 # Scan interval (seconds; 1800 = 30 min, 3600 = 1 hour)
 SCAN_INTERVAL = 1800
 
