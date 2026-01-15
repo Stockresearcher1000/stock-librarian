@@ -4,9 +4,8 @@ import threading
 import sqlite3
 import logging
 import os
-from google.generativeai import GenerativeModel
-import google.generativeai as genai
-from google.generativeai.types import GenerateContentConfig, Tool
+from google import genai
+from google.genai import types
 import requests
 from bs4 import BeautifulSoup
 import feedparser
@@ -85,12 +84,11 @@ def chunks(lst, n):
 
 class GeminiAgent:
     def __init__(self):
-        genai.configure(api_key=GEMINI_API_KEY)
-        self.model = GenerativeModel('gemini-1.5-flash')
+        self.client = genai.Client(api_key=GEMINI_API_KEY)
 
     def search(self, stock_group):
         stock_list_str = ", ".join(stock_group)
-        prompt = f"""
+        prompt = f"""  # ← Your existing prompt text here (keep it the same)
         You are an Omniscient Financial Forensic Auditor searching the whole internet.
         Analyze these stocks for negative news/price crashes: {stock_list_str}.
         
@@ -115,10 +113,13 @@ class GeminiAgent:
         🌐 SOURCE: [e.g., Reuters/Reddit]
         If none: NULL
         """
-        try:
-            response = self.model.generate_content(
-                prompt,
-                generation_config=GenerateContentConfig(tools=[Tool(functions={'google_search': Tool.Function()})])
+       try:
+            response = self.client.models.generate_content(
+                model='gemini-1.5-flash',  # or 'gemini-2.0-flash' if preferred
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    tools=[types.Tool(google_search=types.GoogleSearch())]  # Enable search tool
+                )
             )
             return response.text.strip()
         except Exception as e:
