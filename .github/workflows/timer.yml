@@ -2,13 +2,14 @@ name: Sentinax-FO Intelligence Scan
 
 on:
   schedule:
+    # Runs every 3 hours (minute 0 of every 3rd hour)
     - cron: "0 */3 * * *"
-  workflow_dispatch:
+  workflow_dispatch:          # Allows manual trigger from Actions tab
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 60       # Allows up to 1 hour for full scan
 
     steps:
       - name: Checkout repository
@@ -18,19 +19,13 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          # cache: 'pip'   ← Removed to avoid the error
+          cache: 'pip'                          # Enable caching
+          cache-dependency-path: 'requirements.txt'  # Use your new file for cache key
 
-      - name: Install all required Python packages
+      - name: Install dependencies from requirements.txt
         run: |
           python -m pip install --upgrade pip setuptools wheel
-          pip install \
-            google-genai \
-            requests \
-            beautifulsoup4 \
-            feedparser \
-            python-telegram-bot \
-            transformers \
-            torch
+          pip install -r requirements.txt
 
       - name: Run Sentinax-FO Scan
         env:
