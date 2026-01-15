@@ -2,9 +2,9 @@ name: Sentinax-FO Intelligence Scan
 
 on:
   schedule:
-    # Runs at minute 0 of every 3rd hour (UTC)
+    # Runs every 3 hours (UTC)
     - cron: "0 */3 * * *"
-  workflow_dispatch:         # Allows you to click "Run workflow" manually from the Actions tab
+  workflow_dispatch:         # Allows manual testing from Actions tab
 
 jobs:
   run-bot:
@@ -23,7 +23,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          # Fallback: Install directly if requirements.txt is missing in the repo
+          # Installs from requirements.txt or defaults to core libraries
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt
           else
@@ -34,19 +34,18 @@ jobs:
         env:
           T_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
         run: |
-          # Robust check to ensure the secret is found in GitHub's vault
+          # Robust check to ensure secrets are loaded from GitHub's vault
           if [[ -z "$T_TOKEN" ]]; then
             echo "❌ ERROR: TELEGRAM_TOKEN secret is EMPTY in GitHub Settings!"
             exit 1
           else
-            # Only print first 3 chars for safety verification
-            echo "✅ Secret found. (Masked: ${T_TOKEN:0:3}***)"
+            echo "✅ Secrets are successfully loaded."
           fi
 
       - name: Run Sentinax-FO Scan
         env:
           # This maps your GitHub Secrets to Python's os.environ
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python main.py
