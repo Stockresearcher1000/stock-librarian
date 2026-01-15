@@ -1,123 +1,125 @@
 import os
 import asyncio
-import time
+from datetime import datetime, timedelta
 import finnhub
+from groq import Groq
 from google import genai
 from google.genai import types
-from tavily import TavilyClient
-from exa_py import Exa
-from telegram import Bot
-from telegram.constants import ParseMode
+import telebot
 
 # --- 1. CONFIGURATION & CLIENTS ---
-# These are pulled from your GitHub Secrets
-FINNHUB_KEY = os.environ.get('FINNHUB_API_KEY')
-GEMINI_KEY = os.environ.get('GEMINI_API_KEY')
-TAVILY_KEY = os.environ.get('TAVILY_API_KEY')
-EXA_KEY = os.environ.get('EXA_API_KEY')
-TG_TOKEN = os.environ.get('TELEGRAM_TOKEN')
-CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
+# Initialize clients with GitHub Secrets
+groq_client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+genai_client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+finnhub_client = finnhub.Client(api_key=os.environ.get("FINNHUB_API_KEY"))
+bot = telebot.TeleBot(os.environ.get("TELEGRAM_TOKEN"))
+CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
-# Initialize Clients
-finnhub_client = finnhub.Client(api_key=FINNHUB_KEY)
-gemini_client = genai.Client(api_key=GEMINI_KEY)
-tavily = TavilyClient(api_key=TAVILY_KEY)
-exa = Exa(api_key=EXA_KEY)
-tg_bot = Bot(token=TG_TOKEN)
-
-# --- 2. SMART STOCK DICTIONARY (Test Set) ---
-# Format: "TICKER": "Common Search Name"
+# --- 2. THE F&O STOCK UNIVERSE (220+ Stocks) ---
+# Updated for Jan 2026 inclusive of new listings
 STOCKS = {
-    "RELIANCE": "Reliance Industries",
-    "TCS": "Tata Consultancy Services",
-    "HDFCBANK": "HDFC Bank",
-    "ICICIBANK": "ICICI Bank",
-    "INFY": "Infosys",
-    "TATAMOTORS": "Tata Motors",
-    "SBIN": "State Bank of India",
-    "ADANIENT": "Adani Enterprises",
-    "BHARTIARTL": "Bharti Airtel",
-    "ITC": "ITC Limited"
+    "RELIANCE": "Reliance Industries", "HDFCBANK": "HDFC Bank", "ICICIBANK": "ICICI Bank",
+    "INFY": "Infosys", "TCS": "Tata Consultancy Services", "BHARTIARTL": "Bharti Airtel",
+    "AXISBANK": "Axis Bank", "SBIN": "State Bank of India", "LICI": "LIC of India",
+    "BAJFINANCE": "Bajaj Finance", "MARUTI": "Maruti Suzuki", "SUNPHARMA": "Sun Pharma",
+    "ADANIENT": "Adani Enterprises", "ADANIPORTS": "Adani Ports", "HCLTECH": "HCL Tech",
+    "ITC": "ITC Ltd", "KOTAKBANK": "Kotak Mahindra Bank", "TITAN": "Titan Company",
+    "ULTRACEMCO": "UltraTech Cement", "ASIANPAINT": "Asian Paints", "WIPRO": "Wipro",
+    "M&M": "Mahindra & Mahindra", "NTPC": "NTPC Ltd", "POWERGRID": "Power Grid",
+    "ONGC": "ONGC", "COALINDIA": "Coal India", "TATASTEEL": "Tata Steel",
+    "TATAMOTORS": "Tata Motors", "JINDALSTEL": "Jindal Steel", "JSWSTEEL": "JSW Steel",
+    "HINDALCO": "Hindalco", "GRASIM": "Grasim Industries", "NESTLEIND": "Nestle India",
+    "BRITANNIA": "Britannia", "HUL": "Hindustan Unilever", "CIPLA": "Cipla",
+    "DRREDDY": "Dr. Reddy's", "DIVISLAB": "Divi's Lab", "APOLLOHOSP": "Apollo Hospitals",
+    "EICHERMOT": "Eicher Motors", "HEROMOTOCO": "Hero MotoCorp", "BAJAJ-AUTO": "Bajaj Auto",
+    "BPCL": "BPCL", "IOC": "Indian Oil", "HAL": "Hindustan Aeronautics",
+    "BEL": "Bharat Electronics", "BHEL": "BHEL", "RECLTD": "REC Ltd",
+    "PFC": "PFC", "GAIL": "GAIL", "DLF": "DLF Ltd", "LTIM": "LTIMindtree",
+    "TECHM": "Tech Mahindra", "SWIGGY": "Swiggy", "WAAREEENER": "Waaree Energies",
+    "PREMIERENE": "Premier Energies", "NTPCGREEN": "NTPC Green", "ZOMATO": "Zomato",
+    "PAYTM": "Paytm", "JIOFIN": "Jio Financial", "TRENT": "Trent", "CHOLAFIN": "Cholamandalam",
+    "SHRIRAMFIN": "Shriram Finance", "MUTHOOTFIN": "Muthoot Finance", "CANBK": "Canara Bank",
+    "IDFCFIRSTB": "IDFC First Bank", "AUROPHARMA": "Aurobindo Pharma", "LUPIN": "Lupin",
+    "ALKEM": "Alkem Lab", "GLENMARK": "Glenmark", "TORNTPHARM": "Torrent Pharma",
+    "POLYCAB": "Polycab", "HAVELLS": "Havells", "SIEMENS": "Siemens", "ABB": "ABB India",
+    "CUMMINSIND": "Cummins", "ASHOKLEY": "Ashok Leyland", "AMBUJACEM": "Ambuja Cement",
+    "ACC": "ACC", "SHREECEM": "Shree Cement", "DALBHARAT": "Dalmia Bharat",
+    "PIDILITIND": "Pidilite", "BERGEPAINT": "Berger Paints", "COLPAL": "Colgate",
+    "GODREJCP": "Godrej Consumer", "MARICO": "Marico", "DABUR": "Dabur",
+    "MCDOWELL-N": "United Spirits", "VBL": "Varun Beverages", "TATACONSUM": "Tata Consumer"
+    # Note: Shortened list for readability; all 220+ should be added to your final dict.
 }
 
-# --- 3. INTELLIGENCE FUNCTIONS ---
+# --- 3. THE AI BRAIN FUNCTIONS ---
 
-async def scout_stock(ticker):
-    """Stage 1: Fast scanning for negative keywords in headlines."""
+async def groq_sentiment_filter(headline):
+    """Tier 1: High-speed sentiment scan to filter out noise"""
     try:
-        # Scan news from last 48 hours to cover holiday gaps
-        news = finnhub_client.company_news(ticker, _from="2026-01-14", to="2026-01-16")
-        
-        trigger_words = ['fire', 'raid', 'lawsuit', 'fraud', 'sebi', 'nclt', 'fine', 'scam', 'crash', 'investigation', 'arrest']
-        
-        for n in news:
-            headline = n['headline'].lower()
-            if any(word in headline for word in trigger_words):
-                return n['headline'], n['url']
-        return None
+        completion = groq_client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": "You are a market panic sensor. Respond ONLY with 'YES' or 'NO'."},
+                {"role": "user", "content": f"Is this headline highly critical, negative, or a major structural change for the company? Headline: {headline}"}
+            ],
+            model="llama-3.3-70b-versatile",
+        )
+        return completion.choices[0].message.content.strip().upper() == "YES"
+    except Exception:
+        return True # If Groq fails, fallback to investigation to be safe
+
+async def gemini_deep_dive(ticker, headline, url):
+    """Tier 2: Deep legal and financial analysis using Search Grounding"""
+    prompt = f"""
+    INVESTIGATE: {headline} for {ticker}.
+    1. Verify this news using Google Search.
+    2. Determine if it represents a 'Black Swan' event (fraud, regulatory ban, plant fire, CEO exit).
+    3. TARGET ACTION: Provide a SELL, HOLD, or BUY recommendation for the 9:15 AM market open.
+    4. IMPACT: Estimate potential % drop if the news is negative.
+    """
+    try:
+        response = genai_client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                tools=[types.Tool(google_search_retrieval=types.GoogleSearchRetrieval())]
+            )
+        )
+        return response.text
     except Exception as e:
-        print(f"Scout Error for {ticker}: {e}")
-        return None
+        return f"Gemini Error: {str(e)}"
 
-async def deep_dive_investigation(ticker, headline):
-    """Stage 2: Deep-web search and AI reasoning."""
-    common_name = STOCKS.get(ticker, ticker)
+# --- 4. MAIN ENGINE ---
+
+async def run_scan():
+    today = datetime.now().strftime('%Y-%m-%d')
+    yesterday = (datetime.now() - timedelta(days=2)).strftime('%Y-%m-%d')
     
-    # Combined search for Ticker and Name
-    search_query = f"({ticker} OR '{common_name}') CRITICAL negative news {headline} Jan 2026"
+    print(f"Starting Market Scan for {today}...")
     
-    # Tavily for live news links
-    web_data = tavily.search(query=search_query, search_depth="advanced")
-    
-    # Exa for PDF/Regulatory filings
-    exa_data = exa.search(f"official legal regulatory document {common_name} {ticker} Jan 2026", num_results=2)
-
-    # Gemini Analysis with Google Search Grounding
-    search_tool = types.Tool(google_search=types.GoogleSearch())
-    prompt = (
-        f"You are a Senior Financial Risk Analyst. Analyze this event for {common_name} ({ticker}):\n"
-        f"Initial Headline: {headline}\n"
-        f"Search Evidence: {web_data}\n"
-        f"Exa Filings: {exa_data}\n\n"
-        f"Identify if this is a high-impact negative event. "
-        f"Format as a Telegram alert: Use 🚨 for high risk, ⚠️ for medium. "
-        f"Include a 'Why it matters' section and 'Source Links'."
-    )
-
-    response = gemini_client.models.generate_content(
-        model="gemini-2.0-flash",
-        contents=prompt,
-        config=types.GenerateContentConfig(tools=[search_tool])
-    )
-    return response.text
-
-# --- 4. EXECUTION ENGINE ---
-
-async def run_market_scan():
-    print(f"🚀 Round 1: Starting 8:30 AM IST Intelligence Scan...")
-    
-    # Process in batches of 5 to strictly avoid rate limits
-    items = list(STOCKS.items())
-    for i in range(0, len(items), 5):
-        batch = items[i:i+5]
-        
-        for ticker, name in batch:
-            print(f"Checking {name} ({ticker})...")
-            found_news = await scout_stock(ticker)
+    for ticker, name in STOCKS.items():
+        try:
+            # Step A: Get News
+            news = finnhub_client.company_news(ticker, _from=yesterday, to=today)
             
-            if found_news:
-                headline, source_url = found_news
-                report = await deep_dive_investigation(ticker, headline)
+            for item in news[:3]: # Scan top 3 recent headlines
+                headline = item['headline']
                 
-                # Send to Telegram
-                alert_text = f"<b>CRITICAL MARKET INTELLIGENCE</b>\n\n{report}"
-                await tg_bot.send_message(chat_id=CHAT_ID, text=alert_text, parse_mode=ParseMode.HTML)
-                print(f"✅ Alert sent for {ticker}")
-            
-            await asyncio.sleep(1.5) # Gap between individual stocks
-        
-        print(f"Batch {i//5 + 1} complete. Pausing...")
-        await asyncio.sleep(10) # Gap between batches
+                # Step B: Groq Filter (The Scout)
+                if await groq_sentiment_filter(headline):
+                    print(f"ALERT: Significant news found for {ticker}. Investigating...")
+                    
+                    # Step C: Gemini Analysis (The Judge)
+                    report = await gemini_deep_dive(ticker, headline, item['url'])
+                    
+                    # Step D: Telegram Alert
+                    msg = f"🚨 *URGENT MARKET ALERT: {ticker}*\n\n"
+                    msg += f"*News:* {headline}\n\n"
+                    msg += f"*Analysis:* \n{report}\n\n"
+                    msg += f"[Source]({item['url']})"
+                    
+                    bot.send_message(CHAT_ID, msg, parse_mode="Markdown")
+                    await asyncio.sleep(2) # Prevent rate limiting
+        except Exception as e:
+            print(f"Error scanning {ticker}: {e}")
 
 if __name__ == "__main__":
-    asyncio.run(run_market_scan())
+    asyncio.run(run_scan())
