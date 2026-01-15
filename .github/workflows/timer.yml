@@ -9,8 +9,7 @@ on:
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    # Increases the allowed run time to 1 hour
-    timeout-minutes: 60 
+    timeout-minutes: 60
 
     steps:
       - name: Checkout Code
@@ -23,11 +22,19 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          pip install google-genai requests
+          python -m pip install --upgrade pip
+          pip install \
+            google-generativeai \
+            requests \
+            beautifulsoup4 \
+            feedparser \
+            python-telegram-bot \
+            transformers \
+            torch
 
       - name: Run Sentinax-FO Scan
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python main.py
+          GEMINI_API_KEY:     ${{ secrets.GEMINI_API_KEY }}
+          TELEGRAM_TOKEN:     ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python main.py   # ← change to your actual filename if different (e.g. sentinel_bot.py)
