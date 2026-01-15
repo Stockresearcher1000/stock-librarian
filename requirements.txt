@@ -1,8 +1,14 @@
-google-generativeai
-requests
-beautifulsoup4
-feedparser
-python-telegram-bot
+# AI Models
+groq
+google-genai
 transformers
 torch
+
+# Web Scraping & Data
+beautifulsoup4
+feedparser
 lxml
+requests
+
+# Notifications & Automation
+python-telegram-bot
