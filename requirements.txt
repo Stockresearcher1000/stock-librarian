@@ -6,3 +6,5 @@ tiingo
 tavily-python
 exa_py
 requests
+pyTelegramBotAPI
+
