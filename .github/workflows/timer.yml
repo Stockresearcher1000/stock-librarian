@@ -1,51 +1,8 @@
-name: Sentinax-FO Intelligence Scan
-
-on:
-  schedule:
-    # Runs every 3 hours (UTC)
-    - cron: "0 */3 * * *"
-  workflow_dispatch:         # Allows manual testing from Actions tab
-
-jobs:
-  run-bot:
-    runs-on: ubuntu-latest
-    timeout-minutes: 60      
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          # Installs from requirements.txt or defaults to core libraries
-          if [ -f requirements.txt ]; then
-            pip install -r requirements.txt
-          else
-            pip install python-telegram-bot google-genai requests
-          fi
-
-      - name: Verify Secrets (Safety Check)
+- name: Run Sentinax-FO Scan
         env:
-          T_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-        run: |
-          # Robust check to ensure secrets are loaded from GitHub's vault
-          if [[ -z "$T_TOKEN" ]]; then
-            echo "❌ ERROR: TELEGRAM_TOKEN secret is EMPTY in GitHub Settings!"
-            exit 1
-          else
-            echo "✅ Secrets are successfully loaded."
-          fi
-
-      - name: Run Sentinax-FO Scan
-        env:
-          # This maps your GitHub Secrets to Python's os.environ
+          # Ensure all 4 secrets are mapped here
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python main.py
