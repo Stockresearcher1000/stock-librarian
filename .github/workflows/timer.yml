@@ -4,7 +4,7 @@ on:
   schedule:
     # Runs at minute 0 of every 3rd hour (UTC)
     - cron: "0 */3 * * *"
-  workflow_dispatch:         # Allows you to click "Run workflow" manually
+  workflow_dispatch:         # Allows you to click "Run workflow" manually from the Actions tab
 
 jobs:
   run-bot:
@@ -23,23 +23,24 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          # Checks if requirements.txt exists; if not, installs core libraries directly
+          # Fallback: Install directly if requirements.txt is missing in the repo
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt
           else
             pip install python-telegram-bot google-genai requests
           fi
 
-      - name: Verify Secrets
+      - name: Verify Secrets (Safety Check)
         env:
           T_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
         run: |
-          # Simple check to see if the secret is coming through
+          # Robust check to ensure the secret is found in GitHub's vault
           if [[ -z "$T_TOKEN" ]]; then
-            echo "❌ ERROR: TELEGRAM_TOKEN is missing from GitHub Secrets!"
+            echo "❌ ERROR: TELEGRAM_TOKEN secret is EMPTY in GitHub Settings!"
             exit 1
           else
-            echo "✅ Secrets are successfully loaded."
+            # Only print first 3 chars for safety verification
+            echo "✅ Secret found. (Masked: ${T_TOKEN:0:3}***)"
           fi
 
       - name: Run Sentinax-FO Scan
