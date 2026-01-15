@@ -1,14 +1,8 @@
-# AI Models
-groq
 google-genai
-transformers
-torch
-
-# Web Scraping & Data
-beautifulsoup4
-feedparser
-lxml
-requests
-
-# Notifications & Automation
+groq
 python-telegram-bot
+finnhub-python
+tiingo
+tavily-python
+exa_py
+requests
