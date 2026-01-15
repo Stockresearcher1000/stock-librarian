@@ -1,4 +1,3 @@
-import os
 import asyncio
 from datetime import datetime, timedelta
 import finnhub
@@ -65,71 +64,61 @@ STOCKS = {
     "JIOFIN": "Jio Financial"
 }
 
-# --- 3. THE RISK ANALYST FILTER ---
-async def is_high_impact_negative(ticker, headline):
-    """Uses Groq to filter strictly for catalysts of >= 2% price drops."""
+# --- 3. THE ANALYST (GROQ) ---
+async def groq_risk_analysis(ticker, headline):
+    """Groq is the high-limit Brain. We can call this much faster."""
     try:
         prompt = (
             f"Role: Senior Financial Risk Analyst.\n"
-            f"Target: Identify specific NEGATIVE catalysts for {ticker} that could cause a 2% price drop.\n"
-            f"Headline: '{headline}'\n\n"
-            f"RULES:\n"
-            f"- MUST be company-specific (fraud, lawsuit, fire, regulatory ban, huge earnings miss).\n"
-            f"- NO generic sector news. NO marketing news. NO stock price updates.\n\n"
-            f"Respond only with 'YES' or 'NO'."
+            f"Identify if this headline for {ticker} is a catalyst for a >= 2% price drop.\n"
+            f"Headline: '{headline}'\n"
+            f"Respond 'YES' only if it is a major negative company-specific event (Fraud, Regulatory Ban, Huge Miss)."
         )
+        # Using Groq's Llama 3.3 70B (High speed/limits)
         completion = groq_client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
             model="llama-3.3-70b-versatile",
         )
         return "YES" in completion.choices[0].message.content.strip().upper()
-    except Exception:
-        return False
+    except: return False
 
-# --- 4. EXECUTION ENGINE ---
-async def run_scan():
-    today = datetime.now().strftime('%Y-%m-%d')
-    yesterday = (datetime.now() - timedelta(days=2)).strftime('%Y-%m-%d')
-    
-    stocks_scanned = 0
-    alerts_sent = 0
-    start_time = datetime.now()
-
-    print(f"🚀 Starting High-Impact Negative Catalyst Scan...")
-    
-    for ticker, name in STOCKS.items():
+# --- 4. THE DATA GATHERER (FINNHUB) ---
+async def fetch_and_analyze(ticker, name, semaphore):
+    """This function manages the Finnhub rate limit."""
+    async with semaphore:
         try:
-            stocks_scanned += 1
+            # Finnhub is the slow employee (60 calls/min)
+            today = datetime.now().strftime('%Y-%m-%d')
+            yesterday = (datetime.now() - timedelta(days=2)).strftime('%Y-%m-%d')
+            
             news = finnhub_client.company_news(ticker, _from=yesterday, to=today)
             
             for item in news[:2]:
-                if await is_high_impact_negative(ticker, item['headline']):
-                    msg = (
-                        f"🚨 *CRITICAL NEGATIVE CATALYST*\n\n"
-                        f"*Stock:* {ticker} ({name})\n"
-                        f"*News:* {item['headline']}\n\n"
-                        f"🔗 [View Source]({item['url']})"
-                    )
+                # Send the data to the high-speed Brain (Groq)
+                if await groq_risk_analysis(ticker, item['headline']):
+                    msg = f"🚨 *NEGATIVE CATALYST*\n\n*Stock:* {ticker}\n*News:* {item['headline']}\n🔗 [Link]({item['url']})"
                     bot.send_message(CHAT_ID, msg, parse_mode="Markdown")
-                    alerts_sent += 1
-                    await asyncio.sleep(1.2) # Avoid API rate limits
+                    return True
+            
+            # CRITICAL: Forces the script to wait 1.1s before the next Finnhub call
+            await asyncio.sleep(1.1) 
+            return False
         except Exception as e:
-            print(f"Error scanning {ticker}: {e}")
+            if "429" in str(e):
+                await asyncio.sleep(10) # Emergency cooling if we hit a wall
+            return False
 
-    # --- 5. FINAL SUMMARY NOTIFICATION (Proof of Life) ---
-    duration = (datetime.now() - start_time).seconds
-    if alerts_sent == 0:
-        summary = (
-            f"✅ *Daily Scan Complete: All Clear*\n\n"
-            f"• *Stocks Scanned:* {stocks_scanned}\n"
-            f"• *Negative News Found:* None\n"
-            f"• *Verdict:* No high-impact threats (>= 2% drop) detected.\n"
-            f"• *Duration:* {duration}s"
-        )
-    else:
-        summary = f"🏁 *Scan Complete:* {stocks_scanned} stocks checked. {alerts_sent} high-impact alerts sent."
+# --- 5. EXECUTION ENGINE ---
+async def run_scan():
+    print(f"🚀 Starting Stabilized Scan...")
+    # This semaphore acts as the gatekeeper for Finnhub
+    sem = asyncio.Semaphore(1) 
     
-    bot.send_message(CHAT_ID, summary, parse_mode="Markdown")
+    tasks = [fetch_and_analyze(t, n, sem) for t, n in STOCKS.items()]
+    results = await asyncio.gather(*tasks)
+    
+    alerts = sum(1 for r in results if r)
+    bot.send_message(CHAT_ID, f"🏁 Scan Complete. {len(STOCKS)} checked. {alerts} alerts sent.", parse_mode="Markdown")
 
 if __name__ == "__main__":
     asyncio.run(run_scan())
