@@ -5,3 +5,4 @@ feedparser
 python-telegram-bot
 transformers
 torch
+lxml
