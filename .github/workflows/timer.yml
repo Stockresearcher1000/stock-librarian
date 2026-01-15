@@ -2,9 +2,9 @@ name: Sentinax-FO Intelligence Scan
 
 on:
   schedule:
-    # Runs every 3 hours
+    # Runs at minute 0 of every 3rd hour (UTC)
     - cron: "0 */3 * * *"
-  workflow_dispatch:         # Allows manual trigger
+  workflow_dispatch:         # Allows you to click "Run workflow" manually
 
 jobs:
   run-bot:
@@ -19,22 +19,33 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          # Removed the 'cache' line to prevent failure if requirements.txt is missing.
-          # You can add it back once you are sure the file is in your repo.
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          # Fallback: Install directly if requirements.txt is missing
+          # Checks if requirements.txt exists; if not, installs core libraries directly
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt
           else
             pip install python-telegram-bot google-genai requests
           fi
 
-      - name: Token Debugger (Safety Check)
+      - name: Verify Secrets
         env:
           T_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
         run: |
-          if [ -z "$T_TOKEN" ]; then
-            echo "❌ ERROR: TELEGRAM_TOKEN secret is EMPTY in GitHub Settings!"
+          # Simple check to see if the secret is coming through
+          if [[ -z "$T_TOKEN" ]]; then
+            echo "❌ ERROR: TELEGRAM_TOKEN is missing from GitHub Secrets!"
+            exit 1
+          else
+            echo "✅ Secrets are successfully loaded."
+          fi
+
+      - name: Run Sentinax-FO Scan
+        env:
+          # This maps your GitHub Secrets to Python's os.environ
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python main.py
