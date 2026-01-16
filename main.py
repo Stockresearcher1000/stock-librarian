@@ -16,7 +16,18 @@ groq_client = Groq(api_key=GROQ_API_KEY)
 finnhub_client = finnhub.Client(api_key=FINNHUB_API_KEY)
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
-# --- 2. COMPLETE NSE F&O STOCK UNIVERSE ---
+# --- 2. THE 2026 HIGH-RISK EARNINGS CALENDAR ---
+# Hardcoded for reliability (Based on Jan 2026 Exchange Filings)
+EARNINGS_CALENDAR = {
+    "2026-01-16": ["RELIANCE", "WIPRO", "TECHM", "CENTRALBK"],
+    "2026-01-17": ["HDFCBANK", "ICICIBANK", "RBLBANK"],
+    "2026-01-20": ["SRF", "UNITEDBNK", "PERSISTENT"],
+    "2026-01-21": ["TATACOMM", "HINDPETRO"],
+    "2026-01-22": ["INDIGO", "ZEEL", "COFORGE", "MPHASIS"], # <--- IndiGo Jan 22
+    "2026-01-26": ["AXISBANK"],
+}
+
+# --- 3. COMPLETE NSE F&O STOCK UNIVERSE ---
 STOCKS = {
     "AARTIIND": "Aarti Industries", "ABB": "ABB India", "ABBOTINDIA": "Abbott India",
     "ABCAPITAL": "Aditya Birla Cap", "ABFRL": "Aditya Birla Fashion", "ACC": "ACC Ltd",
@@ -62,64 +73,77 @@ STOCKS = {
     "TRENT": "Trent", "TVSMOTOR": "TVS Motor", "UBL": "UBL", "ULTRACEMCO": "UltraTech",
     "UNIONBANK": "Union Bank", "UPL": "UPL", "VEDL": "Vedanta", "VOLTAS": "Voltas",
     "WIPRO": "Wipro", "ZEEL": "ZEE Ent", "ZOMATO": "Zomato", "SWIGGY": "Swiggy",
-    "JIOFIN": "Jio Financial"
+    "INDIGO": "InterGlobe Aviation", "JIOFIN": "Jio Financial"
 }
 
-# --- 3. THE ANALYST (GROQ) ---
-async def groq_risk_analysis(ticker, headline):
-    """Groq is the high-limit Brain. We can call this much faster."""
+# --- 4. THE DETECTIVE (GROQ FUSION ROLE) ---
+async def groq_forensic_audit(ticker, headline, summary):
+    """
+    Combines News Analysis + Forensic Auditing.
+    Focuses on 'First Domino' events like Auditor Exits, NFRA, or Technical Glitches.
+    """
     try:
         prompt = (
-            f"Role: Senior Financial Risk Analyst.\n"
-            f"Identify if this headline for {ticker} is a catalyst for a >= 2% price drop.\n"
+            f"Role: Forensic Financial Auditor & News Catalyst Analyst.\n"
+            f"Current Year: 2026.\n"
+            f"Analyze if this news for {ticker} is a 'First Domino' event for a major price drop.\n\n"
             f"Headline: '{headline}'\n"
-            f"Respond 'YES' only if it is a major negative company-specific event (Fraud, Regulatory Ban, Huge Miss)."
+            f"Summary: '{summary}'\n\n"
+            f"CRITICAL TRIGGERS (Respond 'YES' if found):\n"
+            f"1. Audit/Governance: NFRA inquiry, Auditor resignation, MGT-7/AOC-4 filing delays, Forensic audit.\n"
+            f"2. Regulatory/Technical: DGCA grounded fleet (if Aviation), Technical glitch preventing trading/banking, SEBI Ban.\n"
+            f"3. Management: Sudden CEO/CFO exit, Promoter pledge sell-off, Fraud allegations.\n"
+            f"Respond ONLY with 'YES' or 'NO'."
         )
-        # Using Groq's Llama 3.3 70B (High speed/limits)
         completion = groq_client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
             model="llama-3.3-70b-versatile",
+            temperature=0, # Maximum precision
         )
         return "YES" in completion.choices[0].message.content.strip().upper()
     except: return False
 
-# --- 4. THE DATA GATHERER (FINNHUB) ---
+# --- 5. DATA GATHERER (FINNHUB) ---
 async def fetch_and_analyze(ticker, name, semaphore):
-    """This function manages the Finnhub rate limit."""
     async with semaphore:
         try:
-            # Finnhub is the slow employee (60 calls/min)
+            # Check Earnings Calendar First
+            today_str = datetime.now().strftime('%Y-%m-%d')
+            if ticker in EARNINGS_CALENDAR.get(today_str, []):
+                bot.send_message(CHAT_ID, f"📅 *EARNINGS ALERT:* {ticker} ({name}) reports today. Volatility expected.", parse_mode="Markdown")
+
+            # Fetch News
             today = datetime.now().strftime('%Y-%m-%d')
-            yesterday = (datetime.now() - timedelta(days=2)).strftime('%Y-%m-%d')
-            
+            yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
             news = finnhub_client.company_news(ticker, _from=yesterday, to=today)
             
-            for item in news[:2]:
-                # Send the data to the high-speed Brain (Groq)
-                if await groq_risk_analysis(ticker, item['headline']):
-                    msg = f"🚨 *NEGATIVE CATALYST*\n\n*Stock:* {ticker}\n*News:* {item['headline']}\n🔗 [Link]({item['url']})"
+            for item in news[:3]: # Scan top 3 recent items
+                is_danger = await groq_forensic_audit(ticker, item['headline'], item.get('summary', ''))
+                if is_danger:
+                    msg = (f"🕵️‍♂️ *FORENSIC ALERT: NEGATIVE CATALYST*\n\n"
+                           f"*Stock:* {ticker}\n"
+                           f"*Event:* {item['headline']}\n"
+                           f"*Source:* {item['source']}\n"
+                           f"🔗 [Full Report]({item['url']})")
                     bot.send_message(CHAT_ID, msg, parse_mode="Markdown")
                     return True
             
-            # CRITICAL: Forces the script to wait 1.1s before the next Finnhub call
-            await asyncio.sleep(1.1) 
+            await asyncio.sleep(1.1) # Respect Finnhub 60/min limit
             return False
         except Exception as e:
-            if "429" in str(e):
-                await asyncio.sleep(10) # Emergency cooling if we hit a wall
+            if "429" in str(e): await asyncio.sleep(15)
             return False
 
-# --- 5. EXECUTION ENGINE ---
+# --- 6. EXECUTION ENGINE ---
 async def run_scan():
-    print(f"🚀 Starting Stabilized Scan...")
-    # This semaphore acts as the gatekeeper for Finnhub
+    print(f"🕵️‍♂️ Detective starting the shift at {datetime.now()}...")
     sem = asyncio.Semaphore(1) 
     
     tasks = [fetch_and_analyze(t, n, sem) for t, n in STOCKS.items()]
     results = await asyncio.gather(*tasks)
     
     alerts = sum(1 for r in results if r)
-    bot.send_message(CHAT_ID, f"🏁 Scan Complete. {len(STOCKS)} checked. {alerts} alerts sent.", parse_mode="Markdown")
+    bot.send_message(CHAT_ID, f"🏁 *Scan Complete*\nStocks Audited: {len(STOCKS)}\nDominoes Found: {alerts}", parse_mode="Markdown")
 
 if __name__ == "__main__":
     asyncio.run(run_scan())
