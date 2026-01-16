@@ -7,4 +7,5 @@ tavily-python
 exa_py
 requests
 pyTelegramBotAPI
-
+yfinance
+pandas
