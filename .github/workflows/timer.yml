@@ -2,9 +2,8 @@ name: Financial Intelligence Bot
 
 on:
   schedule:
-    # GitHub uses UTC. IST is UTC + 5:30.
-    # Round 1: 08:30 AM IST -> 03:00 UTC
-    - cron: '0 3 * * 1-5'
+    # Round 1: 07:46 AM IST -> 02:16 UTC
+    - cron: '16 2 * * 1-5'
     # Round 2: 10:15 AM IST -> 04:45 UTC
     - cron: '45 4 * * 1-5'
     # Round 3: 12:45 PM IST -> 07:15 UTC
