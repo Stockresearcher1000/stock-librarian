@@ -65,23 +65,33 @@ FO_STOCKS = {
 # --- 3. RISK INTELLIGENCE BRAIN ---
 async def analyze_event_risk(ticker, name):
     try:
-        # Step 1: Fetch News (Lookback 14 days to find FUTURE mentions)
-        past_14 = (datetime.now() - timedelta(days=14)).strftime('%Y-%m-%d')
-        today = datetime.now().strftime('%Y-%m-%d')
-        news = finnhub_client.company_news(ticker, _from=past_14, to=today)
-        headlines = " | ".join([n['headline'] for n in news[:20]])
+        today_dt = datetime.now()
+        today_str = today_dt.strftime('%Y-%m-%d')
+        future_30 = (today_dt + timedelta(days=30)).strftime('%Y-%m-%d')
+        past_7 = (today_dt - timedelta(days=7)).strftime('%Y-%m-%d')
 
-        # Step 2: Advanced AI Prompt for Forensic Analysis
+        # 1. Fetch Earnings Calendar (This specifically looks for FUTURE dates)
+        # Note: Finnhub uses 'from' and 'to' for earnings dates
+        calendar = finnhub_client.earnings_calendar(_from=today_str, to=future_30, symbol=ticker)
+        earnings_info = ""
+        if calendar.get('earningsCalendar'):
+            e = calendar['earningsCalendar'][0]
+            earnings_info = f"UPCOMING EARNINGS: {e['date']} (Estimate EPS: {e.get('eps_estimate', 'N/A')})"
+
+        # 2. Fetch News (Reduced lookback to keep it fresh)
+        news = finnhub_client.company_news(ticker, _from=past_7, to=today_str)
+        headlines = " | ".join([n['headline'] for n in news[:10]])
+
+        # 3. AI Analysis with "Future 2026" Strictness
         prompt = (
-            f"STOCK: {name} ({ticker})\nCONTEXT: {headlines}\n\n"
-            f"ACT AS: Forensic Financial Risk Analyst.\n"
-            f"TASK: Identify any SPECIFIC DATE in the next 30 days that could trigger a price fall of 2% or more.\n"
-            f"SCAN FOR:\n"
-            f"- Lawsuits: Supreme Court/NCLT (India) or Class Action/SEC (Foreign).\n"
-            f"- Regulatory: SEBI orders, FDA warning letters, or License expiries.\n"
-            f"- Corporate: Lock-in expiries, Auditor resignations, or Debt repayment deadlines.\n"
-            f"- Earnings: Scheduled dates where sentiment suggests a massive miss.\n\n"
-            f"RESPONSE: If found, reply 'DANGER: [Date] | [Risk Name] | [Reasoning]'. Otherwise reply 'SAFE'."
+            f"STOCK: {name} ({ticker})\n"
+            f"TODAY'S DATE: {today_str}\n"
+            f"EARNINGS DATA: {earnings_info}\n"
+            f"RECENT NEWS: {headlines}\n\n"
+            f"ACT AS: Forensic Risk Analyst.\n"
+            f"GOAL: Find any event between {today_str} and {future_30} (YEAR 2026) that will crash the stock.\n"
+            f"REQUIREMENT: The date MUST be in the future (2026). Ignore all 2024 or 2025 news.\n"
+            f"RESPONSE: If a future risk exists, reply 'DANGER: [Date] | [Risk] | [Reasoning]'. Otherwise reply 'SAFE'."
         )
 
         response = groq_client.chat.completions.create(
@@ -90,10 +100,11 @@ async def analyze_event_risk(ticker, name):
         )
         
         analysis = response.choices[0].message.content
-        if "DANGER" in analysis.upper():
-            return f"🚨 *FORENSIC ALERT: {name} ({ticker})*\n{analysis}"
+        if "DANGER" in analysis.upper() and "2026" in analysis:
+            return f"🚨 *FUTURE RISK ALERT (2026): {name}*\n{analysis}"
         return None
-    except:
+    except Exception as e:
+        print(f"Error on {ticker}: {e}")
         return None
 
 # --- 4. THE SCANNER ENGINE ---
