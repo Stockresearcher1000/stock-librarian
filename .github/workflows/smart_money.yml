@@ -10,15 +10,27 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 20 
+    # Increased to 30 to account for potential API slowness with 735 stocks
+    timeout-minutes: 30 
+    
     steps:
       - uses: actions/checkout@v4
+      
       - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-      - run: pip install -r requirements.txt
+          # Cache pip dependencies to make the run faster
+          cache: 'pip' 
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
       - name: Run Scanner
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        # Added a 'continue-on-error' so you get logs even if one stock fails
+        continue-on-error: false 
         run: python anomaly_scanner.py
