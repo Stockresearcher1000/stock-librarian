@@ -1,16 +1,13 @@
 import yfinance as yf
 import pandas as pd
-import telebot
 import os
+import requests
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
-# --- 1. SETUP ---
-bot = telebot.TeleBot(os.environ.get("TELEGRAM_TOKEN"))
-CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
-
-# Complete List of NSE F&O Stocks (January 2026)
+# --- FORENSIC ALPHA UNIVERSE (735 STOCKS) ---
 STOCKS = [
-    "360ONE.NS", "3IINFOLTD.NS", "3MINDIA.NS", "5PAISA.NS", "AARTIDRUGS.NS", "AARTIIND.NS", "AARTIPHARM.NS", "AAVAS.NS", 
+   "360ONE.NS", "3IINFOLTD.NS", "3MINDIA.NS", "5PAISA.NS", "AARTIDRUGS.NS", "AARTIIND.NS", "AARTIPHARM.NS", "AAVAS.NS", 
     "ABB.NS", "ABBOTINDIA.NS", "ABCAPITAL.NS", "ABFRL.NS", "ACC.NS", "ACCELYA.NS", "ACI.NS", "ADANIENSOL.NS", 
     "ADANIENT.NS", "ADANIGREEN.NS", "ADANIPORTS.NS", "ADVENZYMES.NS", "AEQUS.NS", "AFFLE.NS", "AGARIND.NS", "AGI.NS", 
     "AHLUCONT.NS", "AIAENG.NS", "AJANTPHARM.NS", "AKZOINDIA.NS", "ALEMBICLTD.NS", "ALICON.NS", "ALKEM.NS", "ALKYLAMINE.NS", 
@@ -158,47 +155,77 @@ STOCKS = [
     "ZYDUSWELL.NS"
 ]
 
-def get_option_anomaly(ticker_symbol):
-    try:
-        stock = yf.Ticker(ticker_symbol)
-        if not stock.options:
-            return None
-            
-        expiry = stock.options[0]
-        opt = stock.option_chain(expiry)
-        puts, calls = opt.puts, opt.calls
-        
-        # 1. PCR Calculation
-        total_put_oi = puts['openInterest'].sum()
-        total_call_oi = calls['openInterest'].sum()
-        pcr = total_put_oi / total_call_oi if total_call_oi > 0 else 0
-        
-        # 2. Volume > OI Anomaly (Buying Momentum)
-        # Filters for puts where daily volume is at least 2x the existing open interest
-        anomalous_puts = puts[puts['volume'] > (puts['openInterest'] * 2)]
-        
-        report = ""
-        if pcr > 1.3: # Alert if sentiment is leaning bearish
-            report += f"🛑 BEARISH: PCR is {pcr:.2f}\n"
-        
-        if not anomalous_puts.empty:
-            for _, row in anomalous_puts.iterrows():
-                report += f"⚠️ PUT SPIKE: Strike {row['strike']} | Vol: {int(row['volume'])} | OI: {int(row['openInterest'])}\n"
-        
-        return report if report else None
-    except Exception:
-        return None
+# Get Credentials from GitHub Secrets
+TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
+TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 
-def run_scanner():
-    print(f"🔍 Starting scan for {len(STOCKS)} stocks...")
-    for ticker in STOCKS:
-        alert = get_option_anomaly(ticker)
-        if alert:
-            message = f"🚨 *SMART MONEY ALERT: {ticker}*\n{alert}"
-            bot.send_message(CHAT_ID, message, parse_mode="Markdown")
+def send_telegram_msg(message):
+    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+        print("Telegram credentials missing.")
+        return
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "HTML"}
+    try:
+        requests.post(url, json=payload)
+    except Exception as e:
+        print(f"Error sending telegram: {e}")
+
+def scan_stock(ticker):
+    """Fetches data and checks for forensic anomalies."""
+    try:
+        # Fetching 5 days of data to compare current vs average
+        df = yf.download(ticker, period="5d", interval="1d", progress=False)
+        if df.empty or len(df) < 2:
+            return None
         
-        # Small delay to prevent API rate limiting
-        time.sleep(3) 
+        last_close = df['Close'].iloc[-1].item()
+        prev_close = df['Close'].iloc[-2].item()
+        last_vol = df['Volume'].iloc[-1].item()
+        avg_vol = df['Volume'].iloc[:-1].mean().item()
+        
+        price_change = ((last_close - prev_close) / prev_close) * 100
+        vol_spike = last_vol / avg_vol if avg_vol > 0 else 0
+        
+        # ANOMALY LOGIC: 5% price move OR 3x Volume spike (Forensic Audit Triggers)
+        if abs(price_change) >= 5.0 or vol_spike >= 3.0:
+            return {
+                "ticker": ticker,
+                "price": round(last_close, 2),
+                "change": round(price_change, 2),
+                "vol_ratio": round(vol_spike, 2)
+            }
+    except:
+        return None
+    return None
+
+def main():
+    start_time = time.time()
+    print(f"Starting Forensic Audit for {len(STOCKS)} stocks...")
+    
+    anomalies = []
+    
+    # PROCESS IN PARALLEL: 10 threads effectively manage the 735-stock load
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        future_to_stock = {executor.submit(scan_stock, stock): stock for stock in STOCKS}
+        
+        for i, future in enumerate(as_completed(future_to_stock)):
+            result = future.result()
+            if result:
+                anomalies.append(result)
+            
+            # HEARTBEAT: Keeps GitHub Action alive by printing progress
+            if (i + 1) % 50 == 0:
+                print(f"Progress: {i+1}/{len(STOCKS)} scanned... Elapsed: {time.time() - start_time:.2f}s")
+
+    # Final Alerting
+    if anomalies:
+        msg = "<b>🚨 Forensic Alpha Alert: Anomalies Detected</b>\n\n"
+        for a in anomalies:
+            direction = "📈" if a['change'] > 0 else "📉"
+            msg += f"{direction} <b>{a['ticker']}</b>: ₹{a['price']} ({a['change']}%) | Vol: {a['vol_ratio']}x\n"
+        send_telegram_msg(msg)
+    
+    print(f"Scan complete in {time.time() - start_time:.2f} seconds.")
 
 if __name__ == "__main__":
-    run_scanner()
+    main()
